@@ -2,7 +2,9 @@
 param(
     [string]$InFile = "vesta_ephemeris_weekly.txt",
     [string]$Output = "vesta_declination_reversals.csv",
-    [switch]$Preview
+    [switch]$Preview,
+    [double]$MinWindowMonths = 6.0,
+    [double]$MinToleranceDeg = 0.05
 )
 
 Set-StrictMode -Version Latest
@@ -108,12 +110,45 @@ for ($i=1; $i -lt $decs.Count-1; $i++) {
     }) | Out-Null
 }
 
+# Filter minima to be 6-month-window minima (centered)
+$daysPerMonth = 365.2425 / 12.0
+$halfWindowDays = 0.5 * $MinWindowMonths * $daysPerMonth
+
+$filtered = New-Object System.Collections.Generic.List[pscustomobject]
+foreach ($r in $results) {
+    if ($r.reversal_type -ne 'declination_min') {
+        $filtered.Add($r) | Out-Null
+        continue
+    }
+    try {
+        $rDt = [datetime]::ParseExact($r.datetime_utc, 'yyyy-MM-dd HH:mm', $culture, $styles)
+    } catch {
+        continue
+    }
+    $t0 = $rDt.AddDays(-$halfWindowDays)
+    $t1 = $rDt.AddDays($halfWindowDays)
+    $hasAny = $false
+    $minVal = [double]::PositiveInfinity
+    for ($j=0; $j -lt $dates.Count; $j++) {
+        $d = $dates[$j]
+        if ($d -ge $t0 -and $d -le $t1) {
+            $hasAny = $true
+            $v = [double]$decs[$j]
+            if ($v -lt $minVal) { $minVal = $v }
+        }
+    }
+    if (-not $hasAny) { continue }
+    if ($r.declination_deg -le ($minVal + $MinToleranceDeg)) {
+        $filtered.Add($r) | Out-Null
+    }
+}
+
 # Write CSV
-$results | Export-Csv -LiteralPath $Output -NoTypeInformation -Encoding UTF8
+$filtered | Export-Csv -LiteralPath $Output -NoTypeInformation -Encoding UTF8
 
 if ($Preview) {
-    $results | Select-Object -First 20 | Format-Table -AutoSize | Out-String | Write-Host
-    Write-Host ("Total declination reversals detected: {0}" -f $results.Count)
+    $filtered | Select-Object -First 20 | Format-Table -AutoSize | Out-String | Write-Host
+    Write-Host ("Total declination reversals detected: {0}" -f $filtered.Count)
 } else {
-    Write-Host ("Wrote {0} declination reversals to {1}" -f $results.Count, $Output)
+    Write-Host ("Wrote {0} declination reversals to {1}" -f $filtered.Count, $Output)
 }

@@ -62,7 +62,13 @@ def _flames_colors(n: int) -> list:
     return [cmap(v) for v in vals]
 
 
-def plot_vesta_flames(df: pd.DataFrame, output: str, title: str = "Vesta Declination (Weekly)", dpi: int = 220) -> None:
+def plot_vesta_flames(
+    df: pd.DataFrame,
+    output: str,
+    title: str = "Vesta Declination (Weekly)",
+    dpi: int = 220,
+    annotate_extrema: bool = True,
+) -> None:
     x = df["Date"].values
     y = df["Vesta_Declination_Deg"].values
 
@@ -102,6 +108,44 @@ def plot_vesta_flames(df: pd.DataFrame, output: str, title: str = "Vesta Declina
     yr = np.nanmax(y) - baseline
     ax.set_ylim(baseline - 0.05 * yr, np.nanmax(y) + 0.10 * yr)
 
+    if annotate_extrema and len(y) > 0:
+        # Global min and max within the plotted range
+        i_min = int(np.nanargmin(y))
+        i_max = int(np.nanargmax(y))
+        x_min, y_min = x[i_min], float(y[i_min])
+        x_max, y_max = x[i_max], float(y[i_max])
+
+        # Horizontal reference lines
+        ax.axhline(y_min, color="#4dd0e1", linestyle="--", linewidth=0.9, alpha=0.85)
+        ax.axhline(y_max, color="#f94144", linestyle=":", linewidth=0.9, alpha=0.85)
+
+        # Markers
+        ax.scatter([x_min], [y_min], color="#4dd0e1", s=28, zorder=5)
+        ax.scatter([x_max], [y_max], color="#f94144", s=28, zorder=5)
+
+        # Annotations with small offset
+        deg = "\N{DEGREE SIGN}"
+        min_label = f"Min: {y_min:.2f}{deg} ({pd.to_datetime(x_min).date()})"
+        max_label = f"Max: {y_max:.2f}{deg} ({pd.to_datetime(x_max).date()})"
+        ax.annotate(
+            min_label,
+            xy=(x_min, y_min),
+            xytext=(10, -12),
+            textcoords="offset points",
+            color="#c8f7ff",
+            fontsize=8,
+            bbox=dict(boxstyle="round,pad=0.2", facecolor="#12323a", alpha=0.6, edgecolor="none"),
+        )
+        ax.annotate(
+            max_label,
+            xy=(x_max, y_max),
+            xytext=(10, 8),
+            textcoords="offset points",
+            color="#ffd6d6",
+            fontsize=8,
+            bbox=dict(boxstyle="round,pad=0.2", facecolor="#3a1212", alpha=0.6, edgecolor="none"),
+        )
+
     # Date ticks auto-format
     fig.autofmt_xdate()
 
@@ -116,6 +160,8 @@ def main():
     parser.add_argument("--title", default="Vesta Declination (Weekly)", help="Chart title")
     parser.add_argument("--start", default="1990-01-01", help="Filter start date (YYYY-MM-DD)")
     parser.add_argument("--end", default="2025-12-31", help="Filter end date (YYYY-MM-DD)")
+    parser.add_argument("--no-extrema", dest="annotate_extrema", action="store_false", help="Disable min/max annotations")
+    parser.set_defaults(annotate_extrema=True)
     args = parser.parse_args()
 
     df = parse_vesta_ephemeris(args.input)
@@ -129,7 +175,7 @@ def main():
     if df.empty:
         raise SystemExit("No rows within the requested date range.")
 
-    plot_vesta_flames(df, args.output, title=args.title)
+    plot_vesta_flames(df, args.output, title=args.title, annotate_extrema=args.annotate_extrema)
     print(f"Saved chart -> {args.output}")
 
 
